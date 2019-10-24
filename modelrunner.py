@@ -73,7 +73,7 @@ def preprocess(text):
         sys.exit("Please provide a list to the method")
 
     all_words = ''.join(text).split(' ')
-    return {k:i for i,k in enumerate(list(dict.fromkeys(all_words)))}
+    return {k:i for i,k in enumerate(list(dict.fromkeys(all_words)) + [None])}
 
 
 
@@ -112,6 +112,7 @@ def pad_zeros(encoded_reviews, seq_length = 200):
     """
     COMPLETE THE REST OF THE METHOD
     """
+    return [(k+[0]*seq_length)[0:seq_length] for k in encoded_reviews]
 
 # Task 2: Load the pre-trained embedding vectors
 # For this task you will load the pre-trained embedding vectors from Word2Vec
@@ -128,6 +129,7 @@ def load_embedding_file(embedding_file, token_dict):
     if type(token_dict) is not dict:
         sys.exit("Input a dictionary!")
 
+    
 # Task 3: Create a TensorDataset and DataLoader
 
 def create_data_loader(encoded_reviews, labels, batch_size = 32):
@@ -148,29 +150,29 @@ def create_data_loader(encoded_reviews, labels, batch_size = 32):
 # Task 4: Define the Baseline model here
 
 # This is the baseline model that contains an embedding layer and an fcn for classification
-# class BaseSentiment(nn.Module):
-#     def __init__(self):
-#         super(BaseSentiment).__init__()
+class BaseSentiment(nn.Module):
+    def __init__(self):
+        super(BaseSentiment).__init__()
 
 
-#     def forward (self, input_words):
-#         pass
+    def forward (self, input_words):
+        pass
 
 
-# # Task 5: Define the RNN model here
+# Task 5: Define the RNN model here
 
-# # This model contains an embedding layer, an rnn and an fcn for classification
-# class RNNSentiment(nn.Module):
-#     def __init__(self):
-#         super(RNNSentiment).__init__()
+# This model contains an embedding layer, an rnn and an fcn for classification
+class RNNSentiment(nn.Module):
+    def __init__(self):
+        super(RNNSentiment).__init__()
 
-#     def forward(self, input_words):
-#         pass
+    def forward(self, input_words):
+        pass
 
-# # Task 6: Define the RNN model here
+# Task 6: Define the RNN model here
 
-# # This model contains an embedding layer, self-attention and an fcn for classification
-# class AttentionSentiment(nn.Module):
+# This model contains an embedding layer, self-attention and an fcn for classification
+class AttentionSentiment(nn.Module):
     def __init__(self):
         super(RNNSentiment).__init__()
 
@@ -190,6 +192,8 @@ ALL METHODS AND CLASSES HAVE BEEN DEFINED! TIME TO START EXECUTION!!
 # Training starts!!
 
 # Testing starts!!
+
+
 
 train_data, train_labels, test_data, test_labels = read_file("movie_reviews.tar.gz")
 vocab = preprocess(train_data + test_data)
