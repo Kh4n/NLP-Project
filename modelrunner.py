@@ -2,8 +2,11 @@ import tarfile
 import sys
 import os
 import tensorflow as tf
+from tensorflow.keras import layers
 import shutil
 import glob
+import numpy as np
+import zipfile as zp
 
 
 # Task 1: Load the data
@@ -26,15 +29,14 @@ def read_file(path_to_dataset):
         with open(data, 'r') as d:
             contents = d.read().splitlines()
             pos_train_data.extend(contents)
-
     pos_train_labels = ["POSITIVE" for k in pos_train_data]
+
     neg_train_data = []
     for data in glob.glob("movie_reviews/train/neg/cv*_*.txt"):
         with open(data, 'r') as d:
             contents = d.read().splitlines()
             neg_train_data.extend(contents)
-
-    neg_train_labels = ["NEGATIVE" for k in pos_train_data]
+    neg_train_labels = ["NEGATIVE" for k in neg_train_data]
 
     train_data = pos_train_data + neg_train_data
     train_labels = pos_train_labels + neg_train_labels
@@ -45,15 +47,14 @@ def read_file(path_to_dataset):
         with open(data, 'r') as d:
             contents = d.read().splitlines()
             pos_test_data.extend(contents)
-
     pos_test_labels = ["POSITIVE" for k in pos_test_data]
+
     neg_test_data = []
     for data in glob.glob("movie_reviews/test/neg/cv*_*.txt"):
         with open(data, 'r') as d:
             contents = d.read().splitlines()
             neg_test_data.extend(contents)
-
-    neg_test_labels = ["NEGATIVE" for k in pos_test_data]
+    neg_test_labels = ["NEGATIVE" for k in neg_test_data]
 
     test_data = pos_test_data + neg_test_data
     test_labels = pos_test_labels + neg_test_labels
@@ -128,9 +129,47 @@ def load_embedding_file(embedding_file, token_dict):
         sys.exit("Input embedding path is not a file")
     if type(token_dict) is not dict:
         sys.exit("Input a dictionary!")
-
+    
+    embedding_mapping = np.zeros([len(token_dict), 300])
+    i = 0
+    with zp.ZipFile(embedding_file) as myzip:
+        myzip.extractall()
+    with open('.'.join(embedding_file.split('.')[:-1]), 'r') as f:
+        next(f)
+        for line in f:
+            row = line.split(' ')
+            try:
+                index = token_dict[row[0].lower()]
+                embedding_mapping[index] = row[1:]
+            except KeyError as k:
+                # print("Could not find", row[0].lower())
+                pass
+            i += 1
+            if i % 50000 == 0:
+                print("Processed", i, "lines from vec file...")
+    os.remove('.'.join(embedding_file.split('.')[:-1]))
+    return embedding_mapping
     
 # Task 3: Create a TensorDataset and DataLoader
+
+class SentimentDataGenerator(tf.keras.utils.Sequence):
+    'Generates data for Keras'
+    def __init__(self, encoded_reviews, labels, batch_size = 32):
+        'Initialization'
+        self.encoded_reviews, self.labels = encoded_reviews, labels
+        self.batch_size = batch_size
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return len(self.encoded_reviews)//self.batch_size
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+
+        x = self.encoded_reviews[index*self.batch_size:(index+1)*self.batch_size]
+        y = self.labels[index*self.batch_size:(index+1)*self.batch_size]
+        return x, y
 
 def create_data_loader(encoded_reviews, labels, batch_size = 32):
     """
@@ -139,45 +178,103 @@ def create_data_loader(encoded_reviews, labels, batch_size = 32):
     :param batch_size: batch size for training
     :return: DataLoader object
     """
+    def unison_shuffled_copies(a, b):
+        assert len(a) == len(b)
+        p = np.random.permutation(len(a))
+        return a[p], b[p]
 
     if type(encoded_reviews) is not list or type(labels) is not list:
         sys.exit("Please provide a list to the method")
-    """
-    COMPLETE THE REST OF THE METHOD
-    """
+    
+    split = int(0.8*len(encoded_reviews))
+    encoded_reviews, labels = unison_shuffled_copies(np.asfarray(encoded_reviews), np.asfarray(labels))
+    train_gen = SentimentDataGenerator(encoded_reviews[0:split], labels[0:split], batch_size=batch_size)
+    val_gen = SentimentDataGenerator(encoded_reviews[split:], labels[split:], batch_size=batch_size)
+    return train_gen, val_gen 
+    
 
 
-# Task 4: Define the Baseline model here
+seq_length = 200
+batch_size = 64
 
-# This is the baseline model that contains an embedding layer and an fcn for classification
-class BaseSentiment(nn.Module):
-    def __init__(self):
-        super(BaseSentiment).__init__()
+train_data, train_labels, test_data, test_labels = read_file("movie_reviews.tar.gz")
+vocab = preprocess(train_data + test_data)
+
+train_data = encode_review(vocab, train_data)
+train_data = pad_zeros(train_data, seq_length=seq_length)
+train_labels = encode_labels(train_labels)
+
+test_data = encode_review(vocab, test_data)
+test_data = pad_zeros(test_data, seq_length=seq_length)
+test_labels = encode_labels(test_labels)
+
+embedding_mapping = load_embedding_file("wiki-news-300d-1M.vec.zip", vocab)
+
+gen, vgen = create_data_loader(train_data, train_labels, batch_size=batch_size)
 
 
-    def forward (self, input_words):
-        pass
+
+# # Task 4: Define the Baseline model here
+
+# # This is the baseline model that contains an embedding layer and an fcn for classification
+
+inputs = layers.Input(shape=(seq_length))
+embed = layers.Embedding(len(vocab), 300, input_length=seq_length, trainable=False, weights=[embedding_mapping])(inputs)
+x = layers.Flatten()(embed)
+output = layers.Dense(1, activation="sigmoid")(x)
+
+baseline_model = tf.keras.Model(inputs=inputs, outputs=output)
+
+# class BaseSentiment(nn.Module):
+#     def __init__(self):
+#         super(BaseSentiment).__init__()
 
 
-# Task 5: Define the RNN model here
+#     def forward (self, input_words):
+#         pass
 
-# This model contains an embedding layer, an rnn and an fcn for classification
-class RNNSentiment(nn.Module):
-    def __init__(self):
-        super(RNNSentiment).__init__()
 
-    def forward(self, input_words):
-        pass
 
-# Task 6: Define the RNN model here
+# # Task 5: Define the RNN model here
 
-# This model contains an embedding layer, self-attention and an fcn for classification
-class AttentionSentiment(nn.Module):
-    def __init__(self):
-        super(RNNSentiment).__init__()
+# # This model contains an embedding layer, an rnn and an fcn for classification
 
-    def forward(self, input_words):
-        pass
+inputs = layers.Input(shape=(seq_length))
+embed = layers.Embedding(len(vocab), 300, input_length=seq_length, trainable=False, weights=[embedding_mapping])(inputs)
+x = layers.SimpleRNN(64, unroll=True)(embed)
+output = layers.Dense(1, activation="sigmoid")(x)
+
+rnn_model = tf.keras.Model(inputs=inputs, outputs=output)
+print(rnn_model.summary())
+
+sgd = tf.keras.optimizers.SGD(lr=0.001, decay=1e-6, momentum=0.9, nesterov=True, clipnorm=1.)
+rnn_model.compile(loss='binary_crossentropy',
+              optimizer=tf.keras.optimizers.RMSprop(lr=0.001),
+            #   optimizer=sgd,
+              metrics=['binary_accuracy'])
+
+history = rnn_model.fit_generator(
+    gen, epochs=500, validation_data=vgen, shuffle=False,
+    # workers=8, use_multiprocessing=True
+)
+
+
+# class RNNSentiment(nn.Module):
+#     def __init__(self):
+#         super(RNNSentiment).__init__()
+
+#     def forward(self, input_words):
+#         pass
+
+# # Task 6: Define the Attention model here
+
+# # This model contains an embedding layer, self-attention and an fcn for classification
+# class AttentionSentiment(nn.Module):
+#     def __init__(self):
+#         super(RNNSentiment).__init__()
+
+#     def forward(self, input_words):
+#         pass
 
 """
 ALL METHODS AND CLASSES HAVE BEEN DEFINED! TIME TO START EXECUTION!!
@@ -194,20 +291,10 @@ ALL METHODS AND CLASSES HAVE BEEN DEFINED! TIME TO START EXECUTION!!
 # Testing starts!!
 
 
+# print(embedding_mapping[:10])
+# print(train_data[:10])
+# print(train_labels[:10])
+# print(test_data[:10])
+# print(test_labels[:10])
 
-train_data, train_labels, test_data, test_labels = read_file("movie_reviews.tar.gz")
-vocab = preprocess(train_data + test_data)
-
-train_data = encode_review(vocab, train_data)
-train_labels = encode_labels(train_labels)
-
-test_data = encode_review(vocab, test_data)
-test_labels = encode_labels(test_labels)
-
-
-print(train_data[:10])
-print(train_labels[:10])
-print(test_data[:10])
-print(test_labels[:10])
-
-shutil.rmtree("movie_reviews")
+# shutil.rmtree("movie_reviews")

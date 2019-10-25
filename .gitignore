@@ -1,1 +1,5 @@
-wiki-news-300d-1M.vec.zip
+wiki-news-300d-1M.vec*
+.vscode
+movie_reviews
+._movie_reviews
+tensorflow-gpu
